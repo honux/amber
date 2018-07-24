@@ -1,0 +1,21 @@
+div
+    $var_1 = 10
+    span var_1: #{$var_1}
+
+    if $var_1 == 10
+        $var_1 = 20
+    span var_1: #{$var_1}
+
+    if $var_1 == 20
+        $var_2 = 100
+        span var_1: #{$var_1}
+        span var_2: #{$var_2}
+        if 1 == 2
+            $var_1 = 30
+            $var_2 = 200
+            span var_1: #{$var_1}
+            span var_2: #{$var_2}
+
+    $var_2 = 1000
+    span var_1: #{$var_1}
+    span var_2: #{$var_2}
