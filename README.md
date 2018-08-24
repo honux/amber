@@ -1,15 +1,13 @@
-# amber [![GoDoc](https://godoc.org/github.com/golang/gddo?status.svg)](http://godoc.org/github.com/eknkc/amber) [![Build Status](https://travis-ci.org/eknkc/amber.svg?branch=master)](https://travis-ci.org/eknkc/amber)
-
-## Notice
-> While Amber is perfectly fine and stable to use, I've been working on a direct Pug.js port for Go. It is somewhat hacky at the moment but take a look at [Pug.go](https://github.com/eknkc/pug) if you are looking for a [Pug.js](https://github.com/pugjs/pug) compatible Go template engine.
+# amber [![GoDoc](https://godoc.org/github.com/golang/gddo?status.svg)](http://godoc.org/github.com/honux/amber)
 
 ### Usage
 ```go
-import "github.com/eknkc/amber"
+import "github.com/honux/amber"
 ```
 
 Amber is an elegant templating engine for Go Programming Language
-It is inspired from HAML and Jade
+It is inspired from HAML and Jade.
+The initial version was made by eknkc.
 
 ### Tags
 
@@ -161,6 +159,19 @@ If you need to access the supplied data itself (i.e. the object containing Name,
 
     p $.Name
 
+If you use golang 1.11+, you can also modify the variable value during runtime
+
+    div
+        $fullname = Name + " " + LastName
+        p Welcome #{$fullname}
+        if $fullname != ""
+            $fullname = "Jhon Doe"
+        // $fullname will now be Jhon Doe
+
+Take a note that **It does not verify if the variable exists (if it were previously created) or not**.
+It was made this way so you are able to make include only templates or even access variables outside the included template (although you shouldn't do that).
+
+
 ### Conditions
 
 For conditional blocks, it is possible to use `if <expression>`
@@ -179,10 +190,11 @@ Again, it is possible to use arithmetic and boolean operators
         if Name == "Ekin" && LastName == "Koc"
             p Hey! I know you..
 
-There is a special syntax for conditional attributes. Only block attributes can have conditions;
+There is a special syntax for conditional attributes. Only block attributes can have conditions; It allows multiple conditions to be verified.
 
     div
         .hasfriends ? Friends > 0
+        .nofriends ? Friends == 0
 
 This would yield a div with `hasfriends` class only if the `Friends > 0` condition holds. It is
 perfectly fine to use the same method for other types of attributes:
