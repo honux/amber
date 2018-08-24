@@ -19,7 +19,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/eknkc/amber/parser"
+	"github.com/honux/amber/parser"
 )
 
 var builtinFunctions = [...]string{
