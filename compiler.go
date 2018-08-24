@@ -102,6 +102,12 @@ type DirOptions struct {
 	Recursive bool
 }
 
+// KnownVariables is used to store the known variables on a given block
+type KnownVariables struct {
+    // Variables store the name of the variables
+    Variables []string
+}
+
 // DefaultOptions sets pretty-printing to true and line numbering to false.
 var DefaultOptions = Options{true, false, nil}
 
@@ -336,7 +342,7 @@ func (c *Compiler) CompileWriter(out io.Writer) (err error) {
 	}()
 
 	c.buffer = new(bytes.Buffer)
-	c.visit(c.node)
+	c.visit(c.node, &KnownVariables{})
 
 	if c.buffer.Len() > 0 {
 		c.write("\n")
@@ -361,7 +367,7 @@ func (c *Compiler) CompileString() (string, error) {
 	return result, nil
 }
 
-func (c *Compiler) visit(node parser.Node) {
+func (c *Compiler) visit(node parser.Node, knownvar *KnownVariables) {
 	defer func() {
 		if r := recover(); r != nil {
 			if rs, ok := r.(string); ok && rs[:len("Amber Error")] == "Amber Error" {
@@ -380,21 +386,21 @@ func (c *Compiler) visit(node parser.Node) {
 
 	switch node.(type) {
 	case *parser.Block:
-		c.visitBlock(node.(*parser.Block))
+		c.visitBlock(node.(*parser.Block), knownvar)
 	case *parser.Doctype:
 		c.visitDoctype(node.(*parser.Doctype))
 	case *parser.Comment:
-		c.visitComment(node.(*parser.Comment))
+		c.visitComment(node.(*parser.Comment), knownvar)
 	case *parser.Tag:
-		c.visitTag(node.(*parser.Tag))
+		c.visitTag(node.(*parser.Tag), knownvar)
 	case *parser.Text:
-		c.visitText(node.(*parser.Text))
+		c.visitText(node.(*parser.Text), knownvar)
 	case *parser.Condition:
-		c.visitCondition(node.(*parser.Condition))
+		c.visitCondition(node.(*parser.Condition), knownvar)
 	case *parser.Each:
-		c.visitEach(node.(*parser.Each))
+		c.visitEach(node.(*parser.Each), knownvar)
 	case *parser.Assignment:
-		c.visitAssignment(node.(*parser.Assignment))
+		c.visitAssignment(node.(*parser.Assignment), knownvar)
 	case *parser.Mixin:
 		c.visitMixin(node.(*parser.Mixin))
 	case *parser.MixinCall:
@@ -429,13 +435,14 @@ func (c *Compiler) escape(input string) string {
 	return strings.Replace(strings.Replace(input, `\`, `\\`, -1), `"`, `\"`, -1)
 }
 
-func (c *Compiler) visitBlock(block *parser.Block) {
+func (c *Compiler) visitBlock(block *parser.Block, knownvar *KnownVariables) {
+    blockvars := knownvar.Copy()
 	for _, node := range block.Children {
 		if _, ok := node.(*parser.Text); !block.CanInline() && ok {
 			c.indent(0, true)
 		}
 
-		c.visit(node)
+		c.visit(node, blockvars)
 	}
 }
 
@@ -443,7 +450,7 @@ func (c *Compiler) visitDoctype(doctype *parser.Doctype) {
 	c.write(doctype.String())
 }
 
-func (c *Compiler) visitComment(comment *parser.Comment) {
+func (c *Compiler) visitComment(comment *parser.Comment, knownvar *KnownVariables) {
 	if comment.Silent {
 		return
 	}
@@ -454,22 +461,22 @@ func (c *Compiler) visitComment(comment *parser.Comment) {
 		c.write(`{{unescaped "<!-- ` + c.escape(comment.Value) + ` -->"}}`)
 	} else {
 		c.write(`<!-- ` + comment.Value)
-		c.visitBlock(comment.Block)
+		c.visitBlock(comment.Block, knownvar)
 		c.write(` -->`)
 	}
 }
 
-func (c *Compiler) visitCondition(condition *parser.Condition) {
-	c.write(`{{if ` + c.visitRawInterpolation(condition.Expression) + `}}`)
-	c.visitBlock(condition.Positive)
+func (c *Compiler) visitCondition(condition *parser.Condition, knownvar *KnownVariables) {
+    c.write(`{{if ` + c.visitRawInterpolation(condition.Expression) + `}}`)
+	c.visitBlock(condition.Positive, knownvar)
 	if condition.Negative != nil {
 		c.write(`{{else}}`)
-		c.visitBlock(condition.Negative)
+		c.visitBlock(condition.Negative, knownvar)
 	}
 	c.write(`{{end}}`)
 }
 
-func (c *Compiler) visitEach(each *parser.Each) {
+func (c *Compiler) visitEach(each *parser.Each, knownvar *KnownVariables) {
 	if each.Block == nil {
 		return
 	}
@@ -479,15 +486,20 @@ func (c *Compiler) visitEach(each *parser.Each) {
 	} else {
 		c.write(`{{range ` + each.X + `, ` + each.Y + ` := ` + c.visitRawInterpolation(each.Expression) + `}}`)
 	}
-	c.visitBlock(each.Block)
+	c.visitBlock(each.Block, knownvar)
 	c.write(`{{end}}`)
 }
 
-func (c *Compiler) visitAssignment(assgn *parser.Assignment) {
-	c.write(`{{` + assgn.X + ` := ` + c.visitRawInterpolation(assgn.Expression) + `}}`)
+func (c *Compiler) visitAssignment(assgn *parser.Assignment, knownvar *KnownVariables) {
+    if knownvar.IsKnown(assgn.X) {
+        c.write(`{{` + assgn.X + ` = ` + c.visitRawInterpolation(assgn.Expression) + `}}`)
+    } else {
+        knownvar.AddVariable(assgn.X)
+        c.write(`{{` + assgn.X + ` := ` + c.visitRawInterpolation(assgn.Expression) + `}}`)
+    }
 }
 
-func (c *Compiler) visitTag(tag *parser.Tag) {
+func (c *Compiler) visitTag(tag *parser.Tag, knownvar *KnownVariables) {
 	type attrib struct {
 		name      string
 		value     func() string
@@ -589,7 +601,7 @@ func (c *Compiler) visitTag(tag *parser.Tag) {
 				c.indentLevel++
 			}
 
-			c.visitBlock(tag.Block)
+			c.visitBlock(tag.Block, knownvar)
 
 			if !tag.Block.CanInline() {
 				c.indentLevel--
@@ -604,7 +616,7 @@ func (c *Compiler) visitTag(tag *parser.Tag) {
 var textInterpolateRegexp = regexp.MustCompile(`#\{(.*?)\}`)
 var textEscapeRegexp = regexp.MustCompile(`\{\{(.*?)\}\}`)
 
-func (c *Compiler) visitText(txt *parser.Text) {
+func (c *Compiler) visitText(txt *parser.Text, knownvar *KnownVariables) {
 	value := textEscapeRegexp.ReplaceAllStringFunc(txt.Value, func(value string) string {
 		return `{{"{{"}}` + value[2:len(value)-2] + `{{"}}"}}`
 	})
@@ -853,5 +865,24 @@ func (c *Compiler) visitMixinCall(mixinCall *parser.MixinCall) {
 	for i, arg := range mixin.Args {
 		c.write(fmt.Sprintf(`{{%s := %s}}`, arg, c.visitRawInterpolation(mixinCall.Args[i])))
 	}
-	c.visitBlock(mixin.Block)
+	c.visitBlock(mixin.Block, &KnownVariables{})
+}
+
+func (kv *KnownVariables) IsKnown(varname string) bool {
+    for _, name := range kv.Variables {
+        if name == varname {
+            return true
+        }
+    }
+    return false
+}
+
+func (kv *KnownVariables) AddVariable(varname string) {
+    kv.Variables = append(kv.Variables, varname)
+}
+
+func (kv *KnownVariables) Copy() *KnownVariables {
+    kvcopy := &KnownVariables{}
+    kvcopy.Variables = append(kvcopy.Variables, kv.Variables...)
+    return kvcopy
 }
