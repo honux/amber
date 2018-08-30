@@ -23,6 +23,7 @@ const (
 	tokIf
 	tokElse
 	tokEach
+    tokNewVariable
 	tokAssignment
 	tokImport
 	tokNamedBlock
@@ -137,6 +138,10 @@ func (s *scanner) Next() *token {
 		}
 
 		if tok := s.scanBlock(); tok != nil {
+			return tok
+		}
+
+        if tok := s.scanNewVariable(); tok != nil {
 			return tok
 		}
 
@@ -304,6 +309,17 @@ func (s *scanner) scanEach() *token {
 	if sm := rgxEach.FindStringSubmatch(s.buffer); len(sm) != 0 {
 		s.consume(len(sm[0]))
 		return &token{tokEach, sm[3], map[string]string{"X": sm[1], "Y": sm[2]}}
+	}
+
+	return nil
+}
+
+var rgxNewVariable = regexp.MustCompile(`^(\$[\w0-9\-_]*)?\s*:=\s*(.+)$`)
+
+func (s *scanner) scanNewVariable() *token {
+	if sm := rgxNewVariable.FindStringSubmatch(s.buffer); len(sm) != 0 {
+		s.consume(len(sm[0]))
+		return &token{tokNewVariable, sm[2], map[string]string{"X": sm[1]}}
 	}
 
 	return nil

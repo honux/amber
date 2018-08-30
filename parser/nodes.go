@@ -215,6 +215,19 @@ func newEach(exp string) *Each {
 	return each
 }
 
+type NewVariable struct {
+	SourcePosition
+	X          string
+	Expression string
+}
+
+func newNewVariable(x, expression string) *NewVariable {
+	assgn := new(NewVariable)
+	assgn.X = x
+	assgn.Expression = expression
+	return assgn
+}
+
 type Assignment struct {
 	SourcePosition
 	X          string

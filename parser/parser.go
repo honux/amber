@@ -188,6 +188,8 @@ func (p *Parser) parse() Node {
 		return p.parseImport()
 	case tokTag:
 		return p.parseTag()
+    case tokNewVariable:
+        return p.parseNewVariable()
 	case tokAssignment:
 		return p.parseAssignment()
 	case tokNamedBlock:
@@ -375,6 +377,13 @@ func (p *Parser) parseComment() *Comment {
 func (p *Parser) parseText() *Text {
 	tok := p.expect(tokText)
 	node := newText(tok.Value, tok.Data["Mode"] == "raw")
+	node.SourcePosition = p.pos()
+	return node
+}
+
+func (p *Parser) parseNewVariable() *NewVariable {
+	tok := p.expect(tokNewVariable)
+	node := newNewVariable(tok.Data["X"], tok.Value)
 	node.SourcePosition = p.pos()
 	return node
 }

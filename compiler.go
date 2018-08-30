@@ -102,12 +102,6 @@ type DirOptions struct {
 	Recursive bool
 }
 
-// KnownVariables is used to store the known variables on a given block
-type KnownVariables struct {
-    // Variables store the name of the variables
-    Variables []string
-}
-
 // DefaultOptions sets pretty-printing to true and line numbering to false.
 var DefaultOptions = Options{true, false, nil}
 
@@ -342,7 +336,7 @@ func (c *Compiler) CompileWriter(out io.Writer) (err error) {
 	}()
 
 	c.buffer = new(bytes.Buffer)
-	c.visit(c.node, &KnownVariables{})
+	c.visit(c.node)
 
 	if c.buffer.Len() > 0 {
 		c.write("\n")
@@ -367,7 +361,7 @@ func (c *Compiler) CompileString() (string, error) {
 	return result, nil
 }
 
-func (c *Compiler) visit(node parser.Node, knownvar *KnownVariables) {
+func (c *Compiler) visit(node parser.Node) {
 	defer func() {
 		if r := recover(); r != nil {
 			if rs, ok := r.(string); ok && rs[:len("Amber Error")] == "Amber Error" {
@@ -386,21 +380,23 @@ func (c *Compiler) visit(node parser.Node, knownvar *KnownVariables) {
 
 	switch node.(type) {
 	case *parser.Block:
-		c.visitBlock(node.(*parser.Block), knownvar)
+		c.visitBlock(node.(*parser.Block))
 	case *parser.Doctype:
 		c.visitDoctype(node.(*parser.Doctype))
 	case *parser.Comment:
-		c.visitComment(node.(*parser.Comment), knownvar)
+		c.visitComment(node.(*parser.Comment))
 	case *parser.Tag:
-		c.visitTag(node.(*parser.Tag), knownvar)
+		c.visitTag(node.(*parser.Tag))
 	case *parser.Text:
-		c.visitText(node.(*parser.Text), knownvar)
+		c.visitText(node.(*parser.Text))
 	case *parser.Condition:
-		c.visitCondition(node.(*parser.Condition), knownvar)
+		c.visitCondition(node.(*parser.Condition))
 	case *parser.Each:
-		c.visitEach(node.(*parser.Each), knownvar)
+		c.visitEach(node.(*parser.Each))
+    case *parser.NewVariable:
+        c.visitVariableCreation(node.(*parser.NewVariable))
 	case *parser.Assignment:
-		c.visitAssignment(node.(*parser.Assignment), knownvar)
+		c.visitAssignment(node.(*parser.Assignment))
 	case *parser.Mixin:
 		c.visitMixin(node.(*parser.Mixin))
 	case *parser.MixinCall:
@@ -435,14 +431,13 @@ func (c *Compiler) escape(input string) string {
 	return strings.Replace(strings.Replace(input, `\`, `\\`, -1), `"`, `\"`, -1)
 }
 
-func (c *Compiler) visitBlock(block *parser.Block, knownvar *KnownVariables) {
-    blockvars := knownvar.Copy()
+func (c *Compiler) visitBlock(block *parser.Block) {
 	for _, node := range block.Children {
 		if _, ok := node.(*parser.Text); !block.CanInline() && ok {
 			c.indent(0, true)
 		}
 
-		c.visit(node, blockvars)
+		c.visit(node)
 	}
 }
 
@@ -450,7 +445,7 @@ func (c *Compiler) visitDoctype(doctype *parser.Doctype) {
 	c.write(doctype.String())
 }
 
-func (c *Compiler) visitComment(comment *parser.Comment, knownvar *KnownVariables) {
+func (c *Compiler) visitComment(comment *parser.Comment) {
 	if comment.Silent {
 		return
 	}
@@ -461,22 +456,22 @@ func (c *Compiler) visitComment(comment *parser.Comment, knownvar *KnownVariable
 		c.write(`{{unescaped "<!-- ` + c.escape(comment.Value) + ` -->"}}`)
 	} else {
 		c.write(`<!-- ` + comment.Value)
-		c.visitBlock(comment.Block, knownvar)
+		c.visitBlock(comment.Block)
 		c.write(` -->`)
 	}
 }
 
-func (c *Compiler) visitCondition(condition *parser.Condition, knownvar *KnownVariables) {
+func (c *Compiler) visitCondition(condition *parser.Condition) {
     c.write(`{{if ` + c.visitRawInterpolation(condition.Expression) + `}}`)
-	c.visitBlock(condition.Positive, knownvar)
+	c.visitBlock(condition.Positive)
 	if condition.Negative != nil {
 		c.write(`{{else}}`)
-		c.visitBlock(condition.Negative, knownvar)
+		c.visitBlock(condition.Negative)
 	}
 	c.write(`{{end}}`)
 }
 
-func (c *Compiler) visitEach(each *parser.Each, knownvar *KnownVariables) {
+func (c *Compiler) visitEach(each *parser.Each) {
 	if each.Block == nil {
 		return
 	}
@@ -486,20 +481,19 @@ func (c *Compiler) visitEach(each *parser.Each, knownvar *KnownVariables) {
 	} else {
 		c.write(`{{range ` + each.X + `, ` + each.Y + ` := ` + c.visitRawInterpolation(each.Expression) + `}}`)
 	}
-	c.visitBlock(each.Block, knownvar)
+	c.visitBlock(each.Block)
 	c.write(`{{end}}`)
 }
 
-func (c *Compiler) visitAssignment(assgn *parser.Assignment, knownvar *KnownVariables) {
-    if knownvar.IsKnown(assgn.X) {
-        c.write(`{{` + assgn.X + ` = ` + c.visitRawInterpolation(assgn.Expression) + `}}`)
-    } else {
-        knownvar.AddVariable(assgn.X)
-        c.write(`{{` + assgn.X + ` := ` + c.visitRawInterpolation(assgn.Expression) + `}}`)
-    }
+func (c *Compiler) visitVariableCreation(assgn *parser.NewVariable) {
+    c.write(`{{` + assgn.X + ` := ` + c.visitRawInterpolation(assgn.Expression) + `}}`)
 }
 
-func (c *Compiler) visitTag(tag *parser.Tag, knownvar *KnownVariables) {
+func (c *Compiler) visitAssignment(assgn *parser.Assignment) {
+    c.write(`{{` + assgn.X + ` = ` + c.visitRawInterpolation(assgn.Expression) + `}}`)
+}
+
+func (c *Compiler) visitTag(tag *parser.Tag) {
 	type attrib struct {
 		name      string
 		value     func() string
@@ -601,7 +595,7 @@ func (c *Compiler) visitTag(tag *parser.Tag, knownvar *KnownVariables) {
 				c.indentLevel++
 			}
 
-			c.visitBlock(tag.Block, knownvar)
+			c.visitBlock(tag.Block)
 
 			if !tag.Block.CanInline() {
 				c.indentLevel--
@@ -616,7 +610,7 @@ func (c *Compiler) visitTag(tag *parser.Tag, knownvar *KnownVariables) {
 var textInterpolateRegexp = regexp.MustCompile(`#\{(.*?)\}`)
 var textEscapeRegexp = regexp.MustCompile(`\{\{(.*?)\}\}`)
 
-func (c *Compiler) visitText(txt *parser.Text, knownvar *KnownVariables) {
+func (c *Compiler) visitText(txt *parser.Text) {
 	value := textEscapeRegexp.ReplaceAllStringFunc(txt.Value, func(value string) string {
 		return `{{"{{"}}` + value[2:len(value)-2] + `{{"}}"}}`
 	})
@@ -865,24 +859,5 @@ func (c *Compiler) visitMixinCall(mixinCall *parser.MixinCall) {
 	for i, arg := range mixin.Args {
 		c.write(fmt.Sprintf(`{{%s := %s}}`, arg, c.visitRawInterpolation(mixinCall.Args[i])))
 	}
-	c.visitBlock(mixin.Block, &KnownVariables{})
-}
-
-func (kv *KnownVariables) IsKnown(varname string) bool {
-    for _, name := range kv.Variables {
-        if name == varname {
-            return true
-        }
-    }
-    return false
-}
-
-func (kv *KnownVariables) AddVariable(varname string) {
-    kv.Variables = append(kv.Variables, varname)
-}
-
-func (kv *KnownVariables) Copy() *KnownVariables {
-    kvcopy := &KnownVariables{}
-    kvcopy.Variables = append(kvcopy.Variables, kv.Variables...)
-    return kvcopy
+	c.visitBlock(mixin.Block)
 }
